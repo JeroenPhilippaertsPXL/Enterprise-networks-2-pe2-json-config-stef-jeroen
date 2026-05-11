@@ -190,6 +190,11 @@ def push_interface_l3(device, name, settings, auth):
             }
         }
 
+    # OSPF cost — ingebakken in interface PUT
+    if "ospf_cost" in settings:
+        obj.setdefault("ip", {})
+        obj["ip"]["ospf"] = {"cost": settings["ospf_cost"]}
+
     # Helper address
     if "ip_helper_address" in settings:
         obj.setdefault("ip", {})
@@ -213,41 +218,44 @@ def push_interface_l2_native(device, name, settings, auth):
     if not if_type or if_type == "Vlan":
         return
 
-    url = (f"https://{device['host']}/restconf/data/"
-           f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}")
+    base_url = (f"https://{device['host']}/restconf/data/"
+                f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}")
 
-    obj = {"name": if_name}
-
+    # Switchport config via sub-resource PATCH op Cisco-IOS-XE-switch:switchport pad
+    switchport = {}
     if "switchport_mode" in settings:
-        obj.setdefault("Cisco-IOS-XE-switch:switchport", {})
         mode = settings["switchport_mode"]
         if mode == "access":
-            obj["Cisco-IOS-XE-switch:switchport"]["mode"] = {"access": {}}
+            switchport["mode"] = {"access": {}}
         elif mode == "trunk":
-            obj["Cisco-IOS-XE-switch:switchport"]["mode"] = {"trunk": {}}
-
+            switchport["mode"] = {"trunk": {}}
     if "access_vlan" in settings:
-        obj.setdefault("Cisco-IOS-XE-switch:switchport", {})
-        obj["Cisco-IOS-XE-switch:switchport"].setdefault("access", {})
-        obj["Cisco-IOS-XE-switch:switchport"]["access"]["vlan"] = settings["access_vlan"]
-
+        switchport.setdefault("access", {})
+        switchport["access"]["vlan"] = settings["access_vlan"]
     if "trunk_native_vlan" in settings:
-        obj.setdefault("Cisco-IOS-XE-switch:switchport", {})
-        obj["Cisco-IOS-XE-switch:switchport"].setdefault("trunk", {})
-        obj["Cisco-IOS-XE-switch:switchport"]["trunk"]["native"] = settings["trunk_native_vlan"]
+        switchport.setdefault("trunk", {})
+        switchport["trunk"]["native"] = settings["trunk_native_vlan"]
 
+    if switchport:
+        sw_url = base_url + "/Cisco-IOS-XE-switch:switchport"
+        restconf_request("PATCH", sw_url, auth,
+                         {"Cisco-IOS-XE-switch:switchport": switchport})
+
+    # Channel-group via sub-resource PATCH
     if "channel_group" in settings:
-        obj["Cisco-IOS-XE-etherchannel:channel-group"] = {
-            "number": settings["channel_group"],
-            "mode": settings.get("channel_mode", "active")
-        }
+        cg_url = base_url + "/Cisco-IOS-XE-etherchannel:channel-group"
+        restconf_request("PATCH", cg_url, auth, {
+            "Cisco-IOS-XE-etherchannel:channel-group": {
+                "number": settings["channel_group"],
+                "mode": settings.get("channel_mode", "active")
+            }
+        })
 
-    # Fix: gebruik if_type als key, niet "interface"
-    payload = {f"Cisco-IOS-XE-native:{if_type}": [obj]}
-
-    # Port-channel: PUT ipv PATCH want het bestaat nog niet
-    method = "PUT" if if_type == "Port-channel" else "PATCH"
-    restconf_request(method, url, auth, payload)
+    # Port-channel switchport via sub-resource
+    if if_type == "Port-channel" and switchport:
+        # Zorg dat Port-channel bestaat
+        restconf_request("PUT", base_url, auth,
+                         {f"Cisco-IOS-XE-native:{if_type}": [{"name": if_name}]})
 
 
 # ---------------------------------------------------------
@@ -270,24 +278,6 @@ def push_nat_interfaces(device, auth):
         if settings.get("nat_inside"):
             nat_payload["inside"] = {}
         restconf_request("PATCH", url, auth, {"Cisco-IOS-XE-nat:nat": nat_payload})
-
-
-# ---------------------------------------------------------
-# OSPF COST per interface
-# Fix: subinterfaces moeten eerst bestaan via push_interface_l3
-# ---------------------------------------------------------
-def push_ospf_costs(device, auth):
-    if "interfaces" not in device:
-        return
-    for name, settings in device["interfaces"].items():
-        if "ospf_cost" not in settings:
-            continue
-        if_type, if_name = parse_if_type_name(name)
-        if not if_type:
-            continue
-        url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}/ip/ospf/cost")
-        restconf_request("PATCH", url, auth, {"Cisco-IOS-XE-ospf:cost": settings["ospf_cost"]})
 
 
 # ---------------------------------------------------------
@@ -342,8 +332,11 @@ def push_ospf(device, auth):
     if "ospf" not in device:
         return
     ospf = device["ospf"]
-    url = (f"https://{device['host']}/restconf/data/"
-           f"Cisco-IOS-XE-native:native/router/ospf={ospf['process_id']}")
+
+    # Fix: PATCH via router container ipv PUT naar specifieke ospf entry
+    # Vermijdt "unknown element: ospf in ospf" probleem
+    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/router"
+
     process = {
         "id": ospf["process_id"],
         "network": [
@@ -356,8 +349,12 @@ def push_ospf(device, auth):
     if "passive_interfaces" in ospf:
         process["passive-interface"] = ospf["passive_interfaces"]
 
-    # Fix: single object ipv list
-    restconf_request("PUT", url, auth, {"Cisco-IOS-XE-ospf:ospf": process})
+    payload = {
+        "Cisco-IOS-XE-native:router": {
+            "Cisco-IOS-XE-ospf:ospf": [process]
+        }
+    }
+    restconf_request("PATCH", url, auth, payload)
 
 
 # ---------------------------------------------------------
@@ -510,7 +507,7 @@ def push_nat(device, auth):
                   f"Cisco-IOS-XE-native:native/ip/nat/inside/source/list={inside['acl']}")
     entry = {
         "id": inside["acl"],
-        "pool": {"pool-name": inside["pool"]}
+        "pool": {"name": inside["pool"]}
     }
     if inside.get("overload"):
         entry["overload"] = {}
@@ -554,7 +551,6 @@ def main():
         push_vlans(dev, auth)
         push_interfaces(dev, auth)
         push_nat_interfaces(dev, auth)
-        push_ospf_costs(dev, auth)
         push_hsrp(dev, auth)
         push_ospf(dev, auth)
         push_acls(dev, auth)
