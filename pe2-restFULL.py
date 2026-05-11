@@ -177,10 +177,7 @@ def push_interface_l3(device, name, settings, auth):
     # Encapsulation voor subinterfaces (bv. Gig0/0/0.10)
     if "encapsulation_dot1q" in settings:
         vlan_id = settings["encapsulation_dot1q"]
-        if settings.get("native"):
-            obj["encapsulation"] = {"dot1Q": {"vlan-id": vlan_id, "native-vlan": {}}}
-        else:
-            obj["encapsulation"] = {"dot1Q": {"vlan-id": vlan_id}}
+        obj["encapsulation"] = {"dot1Q": {"vlan-id": vlan_id}}
 
     # IP adres
     if "ip_address" in settings:
@@ -196,7 +193,7 @@ def push_interface_l3(device, name, settings, auth):
     # Helper address
     if "ip_helper_address" in settings:
         obj.setdefault("ip", {})
-        obj["ip"]["helper-address"] = [{"ip": settings["ip_helper_address"]}]
+        obj["ip"]["helper-address"] = [{"address": settings["ip_helper_address"]}]
 
     # Shutdown
     if settings.get("shutdown", False):
@@ -222,25 +219,25 @@ def push_interface_l2_native(device, name, settings, auth):
     obj = {"name": if_name}
 
     if "switchport_mode" in settings:
-        obj.setdefault("switchport", {})
+        obj.setdefault("Cisco-IOS-XE-switch:switchport", {})
         mode = settings["switchport_mode"]
         if mode == "access":
-            obj["switchport"]["mode"] = {"access": {}}
+            obj["Cisco-IOS-XE-switch:switchport"]["mode"] = {"access": {}}
         elif mode == "trunk":
-            obj["switchport"]["mode"] = {"trunk": {}}
+            obj["Cisco-IOS-XE-switch:switchport"]["mode"] = {"trunk": {}}
 
     if "access_vlan" in settings:
-        obj.setdefault("switchport", {})
-        obj["switchport"].setdefault("access", {})
-        obj["switchport"]["access"]["vlan"] = settings["access_vlan"]
+        obj.setdefault("Cisco-IOS-XE-switch:switchport", {})
+        obj["Cisco-IOS-XE-switch:switchport"].setdefault("access", {})
+        obj["Cisco-IOS-XE-switch:switchport"]["access"]["vlan"] = settings["access_vlan"]
 
     if "trunk_native_vlan" in settings:
-        obj.setdefault("switchport", {})
-        obj["switchport"].setdefault("trunk", {})
-        obj["switchport"]["trunk"]["native"] = settings["trunk_native_vlan"]
+        obj.setdefault("Cisco-IOS-XE-switch:switchport", {})
+        obj["Cisco-IOS-XE-switch:switchport"].setdefault("trunk", {})
+        obj["Cisco-IOS-XE-switch:switchport"]["trunk"]["native"] = settings["trunk_native_vlan"]
 
     if "channel_group" in settings:
-        obj["channel-group"] = {
+        obj["Cisco-IOS-XE-etherchannel:channel-group"] = {
             "number": settings["channel_group"],
             "mode": settings.get("channel_mode", "active")
         }
@@ -511,17 +508,13 @@ def push_nat(device, auth):
     inside = nat["inside_source"]
     url_inside = (f"https://{device['host']}/restconf/data/"
                   f"Cisco-IOS-XE-native:native/ip/nat/inside/source/list={inside['acl']}")
-    payload_inside = {
-        "Cisco-IOS-XE-nat:list": [{
-            "id": inside["acl"],
-            "pool": inside["pool"],
-            "overload": {} if inside.get("overload") else None
-        }]
+    entry = {
+        "id": inside["acl"],
+        "pool": {"pool-name": inside["pool"]}
     }
-    # Verwijder None waarden
-    payload_inside["Cisco-IOS-XE-nat:list"][0] = {
-        k: v for k, v in payload_inside["Cisco-IOS-XE-nat:list"][0].items() if v is not None
-    }
+    if inside.get("overload"):
+        entry["overload"] = {}
+    payload_inside = {"Cisco-IOS-XE-nat:list": [entry]}
     restconf_request("PUT", url_inside, auth, payload_inside)
 
 
@@ -533,7 +526,6 @@ def push_snmp(device, auth):
         return
     snmp = device["snmp"]
 
-    # Communities afzonderlijk pushen
     for c in snmp.get("communities", []):
         url = (f"https://{device['host']}/restconf/data/"
                f"Cisco-IOS-XE-native:native/snmp-server/community={encode_key(c['name'])}")
@@ -541,7 +533,8 @@ def push_snmp(device, auth):
         entry = {"name": c["name"], mode_key: {}}
         if "acl" in c:
             entry["access-list-name"] = c["acl"]
-        restconf_request("PUT", url, auth, {f"Cisco-IOS-XE-snmp:community": [entry]})
+        # Fix: single object ipv list
+        restconf_request("PUT", url, auth, {"Cisco-IOS-XE-snmp:community": entry})
 
 
 # ---------------------------------------------------------
