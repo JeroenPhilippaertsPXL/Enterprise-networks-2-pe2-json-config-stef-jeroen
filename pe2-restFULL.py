@@ -103,8 +103,35 @@ def push_hostname(device, auth):
 def push_banner(device, auth):
     if "banner_motd" not in device:
         return
+    # Banner in IOS-XE native YANG: delimiter ^ wordt gebruikt
     url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/banner/motd"
-    restconf_request("PUT", url, auth, {"Cisco-IOS-XE-native:motd": {"banner": device["banner_motd"]}})
+    payload = {"Cisco-IOS-XE-native:motd": {"banner": f"^C\n{device['banner_motd']}\n^C"}}
+    restconf_request("PUT", url, auth, payload)
+
+
+def push_service_password_encryption(device, auth):
+    if not device.get("service_password_encryption"):
+        return
+    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/service/password-encryption"
+    restconf_request("PUT", url, auth, {"Cisco-IOS-XE-native:password-encryption": {}})
+
+
+def push_vty_access_class(device, auth):
+    """Access-class op VTY toepassen voor SSH-beveiliging."""
+    vty = device.get("vty")
+    if not vty or "access_class" not in vty:
+        return
+    first, last = str(vty["lines"]).split()
+    url = (f"https://{device['host']}/restconf/data/"
+           f"Cisco-IOS-XE-native:native/line/vty={first},{last}")
+    payload = {
+        "Cisco-IOS-XE-native:vty": [{
+            "first": int(first),
+            "last": int(last),
+            "access-class": {"in": vty["access_class"]}
+        }]
+    }
+    restconf_request("PATCH", url, auth, payload)
 
 
 def push_username(device, auth):
@@ -140,9 +167,11 @@ def push_default_gateway(device, auth):
 def push_global_native(device, auth):
     push_hostname(device, auth)
     push_banner(device, auth)
+    push_service_password_encryption(device, auth)
     push_username(device, auth)
     push_ip_domain(device, auth)
     push_default_gateway(device, auth)
+    push_vty_access_class(device, auth)
 
 
 # ---------------------------------------------------------
@@ -173,6 +202,10 @@ def push_interface_l3(device, name, settings, auth):
     # Vlan gebruikt integer als naam
     obj_name = int(if_name) if if_type == "Vlan" else if_name
     obj = {"name": obj_name}
+
+    # Description
+    if "description" in settings:
+        obj["description"] = settings["description"]
 
     # Encapsulation voor subinterfaces (bv. Gig0/0/0.10)
     if "encapsulation_dot1q" in settings:
