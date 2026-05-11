@@ -6,9 +6,8 @@
       "type": "switch",
       "hostname": "LAB-RA09-A02-SW01",
       "management_ip": "172.16.9.133/28",
-      "console": {
-        "password": "cisco"
-      },
+      "ip_default_gateway": "172.16.9.129",
+      "console": { "password": "cisco" },
       "vty": {
         "lines": "0 15",
         "password": "cisco",
@@ -26,38 +25,22 @@
         { "id": 99, "name": "Native" }
       ],
       "interfaces": {
-        "Gig1/0/1": {
-          "switchport_mode": "trunk",
-          "trunk_native_vlan": 99
-        },
-        "Gig1/0/2": {
-          "switchport_mode": "trunk",
-          "trunk_native_vlan": 99
-        },
-        "Gig1/0/3": {
-          "switchport_mode": "access",
-          "access_vlan": 40
-        },
-        "Gig1/0/5-6": {
-          "channel_group": 1,
-          "channel_mode": "active"
-        },
-        "Port-channel1": {
-          "switchport_mode": "trunk",
-          "trunk_native_vlan": 99
-        },
+        "Gig1/0/1": { "switchport_mode": "trunk", "trunk_native_vlan": 99 },
+        "Gig1/0/2": { "switchport_mode": "trunk", "trunk_native_vlan": 99 },
+        "Gig1/0/3": { "switchport_mode": "access", "access_vlan": 40 },
+        "Gig1/0/5": { "channel_group": 1, "channel_mode": "active" },
+        "Gig1/0/6": { "channel_group": 1, "channel_mode": "active" },
+        "Port-channel1": { "switchport_mode": "trunk", "trunk_native_vlan": 99 },
         "Vlan10": {
           "ip_address": "172.16.9.133",
           "subnet_mask": "255.255.255.240",
           "shutdown": false
         }
       },
-      "ip_default_gateway": "172.16.9.129",
       "ssh": {
         "domain_name": "pxl.local",
         "username": "admin",
         "secret": "cisco",
-        "rsa_key_size": 1024,
         "version": 2
       },
       "snmp": {
@@ -69,20 +52,67 @@
           { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RO" },
           { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RW" }
         ],
-        "traps": {
-          "snmp": ["linkdown", "linkup"],
-          "syslog": true,
-          "all": true
+        "traps": { "snmp": ["linkdown", "linkup"], "syslog": true }
+      }
+    },
+    {
+      "name": "SW2",
+      "type": "switch",
+      "hostname": "LAB-RA09-A02-SW02",
+      "management_ip": "172.16.9.134/28",
+      "ip_default_gateway": "172.16.9.129",
+      "console": { "password": "cisco" },
+      "vty": {
+        "lines": "0 15",
+        "password": "cisco",
+        "login_local": true,
+        "transport_input": "ssh"
+      },
+      "enable_secret": "class",
+      "service_password_encryption": true,
+      "banner_motd": "unauthorized acces is not allowed!",
+      "vlans": [
+        { "id": 10, "name": "management" },
+        { "id": 20, "name": "VM-Hosts" },
+        { "id": 30, "name": "Appliance-Servers" },
+        { "id": 40, "name": "Data-Users" },
+        { "id": 99, "name": "Native" }
+      ],
+      "interfaces": {
+        "Gig1/0/1": { "switchport_mode": "trunk", "trunk_native_vlan": 99 },
+        "Gig1/0/3": { "switchport_mode": "access", "access_vlan": 40 },
+        "Gig1/0/5": { "channel_group": 1, "channel_mode": "active" },
+        "Gig1/0/6": { "channel_group": 1, "channel_mode": "active" },
+        "Port-channel1": { "switchport_mode": "trunk", "trunk_native_vlan": 99 },
+        "Vlan10": {
+          "ip_address": "172.16.9.134",
+          "subnet_mask": "255.255.255.240",
+          "shutdown": false
         }
+      },
+      "ssh": {
+        "domain_name": "pxl.local",
+        "username": "admin",
+        "secret": "cisco",
+        "version": 2
+      },
+      "snmp": {
+        "communities": [
+          { "name": "SNMP-RO", "mode": "RO" },
+          { "name": "SNMP-RW", "mode": "RW" }
+        ],
+        "hosts": [
+          { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RO" },
+          { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RW" }
+        ],
+        "traps": { "snmp": ["linkdown", "linkup"], "syslog": true }
       }
     },
     {
       "name": "R1",
       "type": "router",
       "hostname": "LAB-RA09-C02-R01",
-      "console": {
-        "password": "cisco"
-      },
+      "console": { "password": "cisco" },
       "vty": {
         "lines": "0 4",
         "password": "cisco",
@@ -99,46 +129,29 @@
           "shutdown": false,
           "nat_outside": true
         },
-        "Gig0/0/0": {
-          "shutdown": false
-        },
+        "Gig0/0/0": { "shutdown": false },
         "Gig0/0/0.10": {
           "description": "default gateway for vlan 10",
           "encapsulation_dot1q": 10,
-          "standby": {
-            "group": 10,
-            "ip": "172.16.9.129",
-            "priority": 110,
-            "preempt": true
-          },
           "ip_address": "172.16.9.130",
           "subnet_mask": "255.255.255.240",
+          "standby": { "group": 10, "ip": "172.16.9.129", "priority": 110, "preempt": true },
           "passive_ospf": true
         },
         "Gig0/0/0.20": {
           "description": "default gateway for vlan 20",
           "encapsulation_dot1q": 20,
-          "standby": {
-            "group": 20,
-            "ip": "172.16.9.145",
-            "priority": 110,
-            "preempt": true
-          },
           "ip_address": "172.16.9.146",
           "subnet_mask": "255.255.255.240",
+          "standby": { "group": 20, "ip": "172.16.9.145", "priority": 110, "preempt": true },
           "passive_ospf": true
         },
         "Gig0/0/0.30": {
           "description": "default gateway for vlan 30",
           "encapsulation_dot1q": 30,
-          "standby": {
-            "group": 30,
-            "ip": "172.16.9.161",
-            "priority": 110,
-            "preempt": true
-          },
           "ip_address": "172.16.9.162",
           "subnet_mask": "255.255.255.240",
+          "standby": { "group": 30, "ip": "172.16.9.161", "priority": 110, "preempt": true },
           "passive_ospf": true
         },
         "Gig0/0/0.40": {
@@ -146,125 +159,51 @@
           "encapsulation_dot1q": 40,
           "ip_address": "172.16.9.178",
           "subnet_mask": "255.255.255.240",
-          "standby": {
-            "group": 40,
-            "ip": "172.16.9.177",
-            "priority": 110,
-            "preempt": true
-          },
+          "standby": { "group": 40, "ip": "172.16.9.177", "priority": 110, "preempt": true },
           "ip_helper_address": "10.199.64.66",
           "nat_inside": true,
           "passive_ospf": true
         },
-        "Gig0/0/0.90": {
-          "encapsulation_dot1q": 99,
-          "native": true
-        }
-      },
-      "dhcp": {
-        "service_dhcp": true,
-        "no_service_dhcp": true
+        "Gig0/0/0.90": { "encapsulation_dot1q": 99, "native": true }
       },
       "ssh": {
         "domain_name": "pxl.local",
         "username": "admin",
         "secret": "cisco",
-        "rsa_key_size": 1024,
-        "version": 2,
-        "source_interface": "Gig0/0/0.10"
+        "version": 2
       },
       "ospf": {
         "process_id": 10,
         "router_id": "10.199.66.118",
         "networks": [
-          {
-            "network": "172.16.9.130",
-            "wildcard": "0.0.0.15",
-            "area": 0,
-            "description": "management"
-          },
-          {
-            "network": "172.16.9.178",
-            "wildcard": "0.0.0.15",
-            "area": 0,
-            "description": "data-users"
-          },
-          {
-            "network": "10.199.66.148",
-            "wildcard": "0.0.0.63",
-            "area": 0,
-            "description": "uitgaande interface"
-          }
+          { "network": "172.16.9.130", "wildcard": "0.0.0.15", "area": 0 },
+          { "network": "172.16.9.178", "wildcard": "0.0.0.15", "area": 0 },
+          { "network": "10.199.66.148", "wildcard": "0.0.0.63", "area": 0 }
         ],
-        "passive_interfaces": [
-          "Gig0/0/0.10",
-          "Gig0/0/0.20",
-          "Gig0/0/0.30",
-          "Gig0/0/0.40"
-        ]
+        "passive_interfaces": ["Gig0/0/0.10", "Gig0/0/0.20", "Gig0/0/0.30", "Gig0/0/0.40"]
       },
       "acls": {
         "extended": [
           {
             "name": "ssh-acces",
             "entries": [
-              {
-                "action": "permit",
-                "protocol": "tcp",
-                "source": "host 10.199.64.137",
-                "destination": "172.16.9.128 0.0.0.15",
-                "dest_port": 22
-              },
-              {
-                "action": "permit",
-                "protocol": "tcp",
-                "source": "172.16.9.0 0.0.0.15",
-                "destination": "172.16.9.128 0.0.0.15",
-                "dest_port": 22
-              },
-              {
-                "action": "permit",
-                "protocol": "tcp",
-                "source": "172.16.2.128 0.0.0.15",
-                "destination": "172.16.9.128 0.0.0.15",
-                "dest_port": 22
-              }
+              { "action": "permit", "protocol": "tcp", "source": "host 10.199.64.137", "destination": "172.16.9.128 0.0.0.15", "dest_port": 22 },
+              { "action": "permit", "protocol": "tcp", "source": "172.16.9.0 0.0.0.15", "destination": "172.16.9.128 0.0.0.15", "dest_port": 22 },
+              { "action": "permit", "protocol": "tcp", "source": "172.16.2.128 0.0.0.15", "destination": "172.16.9.128 0.0.0.15", "dest_port": 22 }
             ]
           }
         ],
         "standard": [
-          {
-            "name": "SNMP",
-            "entries": [
-              {
-                "action": "permit",
-                "source": "10.199.64.67"
-              }
-            ]
-          }
+          { "name": "SNMP", "entries": [ { "action": "permit", "source": "10.199.64.67" } ] }
         ],
         "nat_acl": {
           "number": 40,
-          "entries": [
-            {
-              "action": "permit",
-              "source": "172.16.9.178 0.0.0.15"
-            }
-          ]
+          "entries": [ { "action": "permit", "source": "172.16.9.178 0.0.0.15" } ]
         }
       },
       "nat": {
-        "pool": {
-          "name": "USERNAT",
-          "start_ip": "10.199.66.148",
-          "end_ip": "10.199.66.148",
-          "netmask": "255.255.255.240"
-        },
-        "inside_source": {
-          "acl": 40,
-          "pool": "USERNAT",
-          "overload": true
-        }
+        "pool": { "name": "USERNAT", "start_ip": "10.199.66.148", "end_ip": "10.199.66.148", "netmask": "255.255.255.240" },
+        "inside_source": { "acl": 40, "pool": "USERNAT", "overload": true }
       },
       "snmp": {
         "communities": [
@@ -275,91 +214,14 @@
           { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RO" },
           { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RW" }
         ],
-        "traps": {
-          "snmp": ["linkup"],
-          "syslog": true,
-          "all": true
-        }
-      }
-    },
-    {
-      "name": "SW2",
-      "type": "switch",
-      "hostname": "LAB-RA09-A02-SW02",
-      "management_ip": "172.16.9.134/28",
-      "console": {
-        "password": "cisco"
-      },
-      "vty": {
-        "lines": "0 15",
-        "password": "cisco",
-        "login_local": true,
-        "transport_input": "ssh"
-      },
-      "enable_secret": "class",
-      "service_password_encryption": true,
-      "banner_motd": "unauthorized acces is not allowed!",
-      "vlans": [
-        { "id": 10, "name": "management" },
-        { "id": 20, "name": "VM-Hosts" },
-        { "id": 30, "name": "Appliance-Servers" },
-        { "id": 40, "name": "Data-Users" },
-        { "id": 99, "name": "Native" }
-      ],
-      "interfaces": {
-        "Gig1/0/1": {
-          "switchport_mode": "trunk",
-          "trunk_native_vlan": 99
-        },
-        "Gig1/0/3": {
-          "switchport_mode": "access",
-          "access_vlan": 40
-        },
-        "Gig1/0/5-6": {
-          "channel_group": 1,
-          "channel_mode": "active"
-        },
-        "Port-channel1": {
-          "switchport_mode": "trunk",
-          "trunk_native_vlan": 99
-        },
-        "Vlan10": {
-          "ip_address": "172.16.9.134",
-          "subnet_mask": "255.255.255.240",
-          "shutdown": false
-        }
-      },
-      "ip_default_gateway": "172.16.9.129",
-      "ssh": {
-        "domain_name": "pxl.local",
-        "username": "admin",
-        "secret": "cisco",
-        "rsa_key_size": 1024,
-        "version": 2
-      },
-      "snmp": {
-        "communities": [
-          { "name": "SNMP-RO", "mode": "RO" },
-          { "name": "SNMP-RW", "mode": "RW" }
-        ],
-        "hosts": [
-          { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RO" },
-          { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RW" }
-        ],
-        "traps": {
-          "snmp": ["linkdown", "linkup"],
-          "syslog": true,
-          "all": true
-        }
+        "traps": { "snmp": ["linkup"], "syslog": true }
       }
     },
     {
       "name": "R2",
       "type": "router",
       "hostname": "LAB-RA09-C02-R02",
-      "console": {
-        "password": "cisco"
-      },
+      "console": { "password": "cisco" },
       "vty": {
         "lines": "0 4",
         "password": "cisco",
@@ -376,48 +238,31 @@
           "shutdown": false,
           "nat_outside": true
         },
-        "Gig0/0/0": {
-          "shutdown": false
-        },
+        "Gig0/0/0": { "shutdown": false },
         "Gig0/0/0.10": {
           "description": "default gateway for vlan 10",
           "encapsulation_dot1q": 10,
-          "standby": {
-            "group": 10,
-            "ip": "172.16.9.129",
-            "priority": 100,
-            "preempt": true
-          },
           "ip_address": "172.16.9.131",
           "subnet_mask": "255.255.255.240",
+          "standby": { "group": 10, "ip": "172.16.9.129", "priority": 100, "preempt": true },
           "passive_ospf": true,
           "ospf_cost": 2
         },
         "Gig0/0/0.20": {
           "description": "default gateway for vlan 20",
           "encapsulation_dot1q": 20,
-          "standby": {
-            "group": 20,
-            "ip": "172.16.9.145",
-            "priority": 100,
-            "preempt": true
-          },
           "ip_address": "172.16.9.147",
           "subnet_mask": "255.255.255.240",
+          "standby": { "group": 20, "ip": "172.16.9.145", "priority": 100, "preempt": true },
           "passive_ospf": true,
           "ospf_cost": 2
         },
         "Gig0/0/0.30": {
           "description": "default gateway for vlan 30",
           "encapsulation_dot1q": 30,
-          "standby": {
-            "group": 30,
-            "ip": "172.16.9.161",
-            "priority": 100,
-            "preempt": true
-          },
           "ip_address": "172.16.9.163",
           "subnet_mask": "255.255.255.240",
+          "standby": { "group": 30, "ip": "172.16.9.161", "priority": 100, "preempt": true },
           "passive_ospf": true,
           "ospf_cost": 2
         },
@@ -426,114 +271,49 @@
           "encapsulation_dot1q": 40,
           "ip_address": "172.16.9.179",
           "subnet_mask": "255.255.255.240",
-          "standby": {
-            "group": 40,
-            "ip": "172.16.9.177",
-            "priority": 100,
-            "preempt": true
-          },
+          "standby": { "group": 40, "ip": "172.16.9.177", "priority": 100, "preempt": true },
           "ip_helper_address": "10.199.64.66",
           "nat_inside": true,
           "passive_ospf": true,
           "ospf_cost": 2
         },
-        "Gig0/0/0.90": {
-          "encapsulation_dot1q": 99,
-          "native": true
-        }
-      },
-      "dhcp": {
-        "service_dhcp": true,
-        "no_service_dhcp": true
+        "Gig0/0/0.90": { "encapsulation_dot1q": 99, "native": true }
       },
       "ssh": {
         "domain_name": "pxl.local",
         "username": "admin",
         "secret": "cisco",
-        "rsa_key_size": 1024,
         "version": 2
       },
       "ospf": {
         "process_id": 10,
         "router_id": "10.199.66.170",
         "networks": [
-          {
-            "network": "172.16.9.131",
-            "wildcard": "0.0.0.15",
-            "area": 0,
-            "description": "management"
-          },
-          {
-            "network": "172.16.9.179",
-            "wildcard": "0.0.0.15",
-            "area": 0,
-            "description": "data-users"
-          },
-          {
-            "network": "10.199.66.170",
-            "wildcard": "0.0.0.63",
-            "area": 0,
-            "description": "uitgaande interface"
-          }
+          { "network": "172.16.9.131", "wildcard": "0.0.0.15", "area": 0 },
+          { "network": "172.16.9.179", "wildcard": "0.0.0.15", "area": 0 },
+          { "network": "10.199.66.170", "wildcard": "0.0.0.63", "area": 0 }
         ],
-        "passive_interfaces": [
-          "Gig0/0/0.10",
-          "Gig0/0/0.20",
-          "Gig0/0/0.30",
-          "Gig0/0/0.40"
-        ]
+        "passive_interfaces": ["Gig0/0/0.10", "Gig0/0/0.20", "Gig0/0/0.30", "Gig0/0/0.40"]
       },
       "acls": {
         "extended": [
           {
             "name": "ssh-acces",
             "entries": [
-              {
-                "action": "permit",
-                "protocol": "tcp",
-                "source": "host 10.199.64.137",
-                "destination": "172.16.9.128 0.0.0.15",
-                "dest_port": 22
-              },
-              {
-                "action": "permit",
-                "protocol": "tcp",
-                "source": "172.16.9.0 0.0.0.15",
-                "destination": "172.16.9.128 0.0.0.15",
-                "dest_port": 22
-              },
-              {
-                "action": "permit",
-                "protocol": "tcp",
-                "source": "172.16.2.128 0.0.0.15",
-                "destination": "172.16.9.128 0.0.0.15",
-                "dest_port": 22
-              }
+              { "action": "permit", "protocol": "tcp", "source": "host 10.199.64.137", "destination": "172.16.9.128 0.0.0.15", "dest_port": 22 },
+              { "action": "permit", "protocol": "tcp", "source": "172.16.9.0 0.0.0.15", "destination": "172.16.9.128 0.0.0.15", "dest_port": 22 },
+              { "action": "permit", "protocol": "tcp", "source": "172.16.2.128 0.0.0.15", "destination": "172.16.9.128 0.0.0.15", "dest_port": 22 }
             ]
           }
         ],
         "nat_acl": {
           "number": 40,
-          "entries": [
-            {
-              "action": "permit",
-              "source": "172.16.9.178 0.0.0.15"
-            }
-          ]
+          "entries": [ { "action": "permit", "source": "172.16.9.178 0.0.0.15" } ]
         }
       },
       "nat": {
-        "pool": {
-          "name": "USERNAT",
-          "start_ip": "10.199.66.170",
-          "end_ip": "10.199.66.170",
-          "netmask": "255.255.255.192"
-        },
-        "inside_source": {
-          "acl": 40,
-          "pool": "USERNAT",
-          "overload": true
-        }
+        "pool": { "name": "USERNAT", "start_ip": "10.199.66.170", "end_ip": "10.199.66.170", "netmask": "255.255.255.192" },
+        "inside_source": { "acl": 40, "pool": "USERNAT", "overload": true }
       },
       "snmp": {
         "communities": [
@@ -544,11 +324,7 @@
           { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RO" },
           { "host": "10.199.64.67", "version": "2c", "community": "SNMP-RW" }
         ],
-        "traps": {
-          "snmp": ["linkdown", "linkup"],
-          "syslog": true,
-          "all": true
-        }
+        "traps": { "snmp": ["linkdown", "linkup"], "syslog": true }
       }
     }
   ]
