@@ -308,23 +308,25 @@ def push_ospf(device, auth):
 
     url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/router"
 
-    process = {
-        "id": ospf["process_id"],
-        "network": [
-            {"ip": n["network"], "mask": n["wildcard"], "area": n["area"]}
-            for n in ospf["networks"]
-        ]
-    }
+    # Debug: eerst een GET om de huidige OSPF structuur te zien
+    print("  DEBUG: GET huidige router config...")
+    r_get = restconf_request("GET", url, auth)
+    if r_get and r_get.status_code == 200:
+        try:
+            current = r_get.json()
+            print(f"  DEBUG: huidige router config: {json.dumps(current, indent=2)[:500]}")
+        except:
+            print(f"  DEBUG: {r_get.text[:300]}")
 
-    # router-id als container: {"ip": "..."} niet als string
-    if "router_id" in ospf:
-        process["router-id"] = {"ip": ospf["router_id"]}
+    # Minimale payload: alleen id
+    process = {"id": ospf["process_id"]}
 
     payload = {
         "Cisco-IOS-XE-native:router": {
             "Cisco-IOS-XE-ospf:ospf": [process]
         }
     }
+    print(f"  DEBUG: OSPF payload: {json.dumps(payload)}")
     restconf_request("PATCH", url, auth, payload)
 
 
