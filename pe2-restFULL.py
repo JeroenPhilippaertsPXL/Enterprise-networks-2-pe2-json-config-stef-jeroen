@@ -304,51 +304,13 @@ def push_hsrp(device, auth):
 def push_ospf(device, auth):
     if "ospf" not in device:
         return
-    ospf = device["ospf"]
-
-    process_id = ospf["process_id"]
-    networks = [
-        {"ip": n["network"], "mask": n["wildcard"], "area": n["area"]}
-        for n in ospf["networks"]
-    ]
-
-    # Poging 1: PUT rechtstreeks naar ospf list entry zonder wrapper
-    url1 = (f"https://{device['host']}/restconf/data/"
-            f"Cisco-IOS-XE-native:native/router/ospf={process_id}")
-    payload1 = {"Cisco-IOS-XE-ospf:ospf": [{"id": process_id, "network": networks}]}
-    print(f"  DEBUG poging 1: PUT {url1}")
-    r1 = restconf_request("PUT", url1, auth, payload1)
-    if r1 and r1.status_code in (200, 201, 204):
-        print("  DEBUG: poging 1 gelukt!")
-        return
-
-    # Poging 2: id als string
-    payload2 = {"Cisco-IOS-XE-ospf:ospf": [{"id": str(process_id), "network": networks}]}
-    print(f"  DEBUG poging 2: id als string")
-    r2 = restconf_request("PUT", url1, auth, payload2)
-    if r2 and r2.status_code in (200, 201, 204):
-        print("  DEBUG: poging 2 gelukt!")
-        return
-
-    # Poging 3: zonder module prefix
-    url3 = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/router"
-    payload3 = {"Cisco-IOS-XE-native:router": {"ospf": [{"id": process_id, "network": networks}]}}
-    print(f"  DEBUG poging 3: zonder Cisco-IOS-XE-ospf prefix")
-    r3 = restconf_request("PATCH", url3, auth, payload3)
-    if r3 and r3.status_code in (200, 201, 204):
-        print("  DEBUG: poging 3 gelukt!")
-        return
-
-    # Poging 4: area als integer
-    networks_int = [{"ip": n["network"], "mask": n["wildcard"], "area": int(n["area"])} for n in ospf["networks"]]
-    payload4 = {"Cisco-IOS-XE-ospf:ospf": [{"id": process_id, "network": networks_int}]}
-    print(f"  DEBUG poging 4: area als integer")
-    r4 = restconf_request("PUT", url1, auth, payload4)
-    if r4 and r4.status_code in (200, 201, 204):
-        print("  DEBUG: poging 4 gelukt!")
-        return
-
-    print("  WARN: OSPF kon niet geconfigureerd worden via RESTCONF op dit platform.")
+    # OSPF via RESTCONF is niet beschikbaar op ISR 4221 met IOS-XE 17.03.04a.
+    # De Cisco-IOS-XE-ospf:ospf augmentatie geeft consistent HTTP 400
+    # "unknown element: ospf" ongeacht payload of URL structuur.
+    # OSPF wordt geconfigureerd via de bootstrap (CLI/consolekabel).
+    host = device["host"]
+    ospf_id = device["ospf"]["process_id"]
+    print(f"  SKIP  [OSPF {ospf_id}] niet beschikbaar via RESTCONF op ISR 4221 IOS-XE 17.03 — via CLI geconfigureerd")
 
 
 # ---------------------------------------------------------
