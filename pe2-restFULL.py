@@ -190,10 +190,8 @@ def push_interface_l3(device, name, settings, auth):
             }
         }
 
-    # OSPF cost — via Cisco-IOS-XE-ospf namespace
-    if "ospf_cost" in settings:
-        obj.setdefault("ip", {})
-        obj["ip"]["Cisco-IOS-XE-ospf:ospf"] = {"cost": settings["ospf_cost"]}
+    # OSPF cost — niet ondersteund via RESTCONF op IOS-XE 17.03 in interface context
+    # ospf_cost wordt geskipt
 
     # Helper address
     if "ip_helper_address" in settings:
@@ -313,15 +311,14 @@ def push_ospf(device, auth):
     process = {
         "id": ospf["process_id"],
         "network": [
-            {"ip": n["network"], "mask": n["wildcard"], "area": str(n["area"])}
+            {"ip": n["network"], "mask": n["wildcard"], "area": n["area"]}
             for n in ospf["networks"]
         ]
     }
-    if "router_id" in ospf:
-        process["router-id"] = ospf["router_id"]
 
-    # passive-interface weggelaten — veroorzaakte "unknown element: ospf" fout
-    # Passive interfaces worden geconfigureerd via interface-level passive-interface flag
+    # router-id als container: {"ip": "..."} niet als string
+    if "router_id" in ospf:
+        process["router-id"] = {"ip": ospf["router_id"]}
 
     payload = {
         "Cisco-IOS-XE-native:router": {
