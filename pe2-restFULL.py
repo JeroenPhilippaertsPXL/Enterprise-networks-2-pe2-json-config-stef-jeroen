@@ -306,28 +306,49 @@ def push_ospf(device, auth):
         return
     ospf = device["ospf"]
 
-    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/router"
+    process_id = ospf["process_id"]
+    networks = [
+        {"ip": n["network"], "mask": n["wildcard"], "area": n["area"]}
+        for n in ospf["networks"]
+    ]
 
-    # Debug: eerst een GET om de huidige OSPF structuur te zien
-    print("  DEBUG: GET huidige router config...")
-    r_get = restconf_request("GET", url, auth)
-    if r_get and r_get.status_code == 200:
-        try:
-            current = r_get.json()
-            print(f"  DEBUG: huidige router config: {json.dumps(current, indent=2)[:500]}")
-        except:
-            print(f"  DEBUG: {r_get.text[:300]}")
+    # Poging 1: PUT rechtstreeks naar ospf list entry zonder wrapper
+    url1 = (f"https://{device['host']}/restconf/data/"
+            f"Cisco-IOS-XE-native:native/router/ospf={process_id}")
+    payload1 = {"Cisco-IOS-XE-ospf:ospf": [{"id": process_id, "network": networks}]}
+    print(f"  DEBUG poging 1: PUT {url1}")
+    r1 = restconf_request("PUT", url1, auth, payload1)
+    if r1 and r1.status_code in (200, 201, 204):
+        print("  DEBUG: poging 1 gelukt!")
+        return
 
-    # Minimale payload: alleen id
-    process = {"id": ospf["process_id"]}
+    # Poging 2: id als string
+    payload2 = {"Cisco-IOS-XE-ospf:ospf": [{"id": str(process_id), "network": networks}]}
+    print(f"  DEBUG poging 2: id als string")
+    r2 = restconf_request("PUT", url1, auth, payload2)
+    if r2 and r2.status_code in (200, 201, 204):
+        print("  DEBUG: poging 2 gelukt!")
+        return
 
-    payload = {
-        "Cisco-IOS-XE-native:router": {
-            "Cisco-IOS-XE-ospf:ospf": [process]
-        }
-    }
-    print(f"  DEBUG: OSPF payload: {json.dumps(payload)}")
-    restconf_request("PATCH", url, auth, payload)
+    # Poging 3: zonder module prefix
+    url3 = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/router"
+    payload3 = {"Cisco-IOS-XE-native:router": {"ospf": [{"id": process_id, "network": networks}]}}
+    print(f"  DEBUG poging 3: zonder Cisco-IOS-XE-ospf prefix")
+    r3 = restconf_request("PATCH", url3, auth, payload3)
+    if r3 and r3.status_code in (200, 201, 204):
+        print("  DEBUG: poging 3 gelukt!")
+        return
+
+    # Poging 4: area als integer
+    networks_int = [{"ip": n["network"], "mask": n["wildcard"], "area": int(n["area"])} for n in ospf["networks"]]
+    payload4 = {"Cisco-IOS-XE-ospf:ospf": [{"id": process_id, "network": networks_int}]}
+    print(f"  DEBUG poging 4: area als integer")
+    r4 = restconf_request("PUT", url1, auth, payload4)
+    if r4 and r4.status_code in (200, 201, 204):
+        print("  DEBUG: poging 4 gelukt!")
+        return
+
+    print("  WARN: OSPF kon niet geconfigureerd worden via RESTCONF op dit platform.")
 
 
 # ---------------------------------------------------------
