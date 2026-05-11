@@ -190,10 +190,10 @@ def push_interface_l3(device, name, settings, auth):
             }
         }
 
-    # OSPF cost — ingebakken in interface PUT
+    # OSPF cost — via Cisco-IOS-XE-ospf namespace
     if "ospf_cost" in settings:
         obj.setdefault("ip", {})
-        obj["ip"]["ospf"] = {"cost": settings["ospf_cost"]}
+        obj["ip"]["Cisco-IOS-XE-ospf:ospf"] = {"cost": settings["ospf_cost"]}
 
     # Helper address
     if "ip_helper_address" in settings:
@@ -218,43 +218,18 @@ def push_interface_l2_native(device, name, settings, auth):
     if not if_type or if_type == "Vlan":
         return
 
-    base_url = (f"https://{device['host']}/restconf/data/"
-                f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}")
+    # Switchport en channel-group configuratie via RESTCONF wordt niet
+    # ondersteund op Catalyst IOS-XE 17.06 — geen geldig YANG pad beschikbaar.
+    # Deze interfaces zijn al geconfigureerd via de bootstrap (consolekabel).
+    if any(k in settings for k in ["switchport_mode", "access_vlan", "trunk_native_vlan", "channel_group"]):
+        print(f"  SKIP  [{if_type} {if_name}] switchport/channel-group — niet beschikbaar via RESTCONF op dit platform")
+        return
 
-    # Switchport config via sub-resource PATCH op Cisco-IOS-XE-switch:switchport pad
-    switchport = {}
-    if "switchport_mode" in settings:
-        mode = settings["switchport_mode"]
-        if mode == "access":
-            switchport["mode"] = {"access": {}}
-        elif mode == "trunk":
-            switchport["mode"] = {"trunk": {}}
-    if "access_vlan" in settings:
-        switchport.setdefault("access", {})
-        switchport["access"]["vlan"] = settings["access_vlan"]
-    if "trunk_native_vlan" in settings:
-        switchport.setdefault("trunk", {})
-        switchport["trunk"]["native"] = settings["trunk_native_vlan"]
-
-    if switchport:
-        sw_url = base_url + "/Cisco-IOS-XE-switch:switchport"
-        restconf_request("PATCH", sw_url, auth,
-                         {"Cisco-IOS-XE-switch:switchport": switchport})
-
-    # Channel-group via sub-resource PATCH
-    if "channel_group" in settings:
-        cg_url = base_url + "/Cisco-IOS-XE-etherchannel:channel-group"
-        restconf_request("PATCH", cg_url, auth, {
-            "Cisco-IOS-XE-etherchannel:channel-group": {
-                "number": settings["channel_group"],
-                "mode": settings.get("channel_mode", "active")
-            }
-        })
-
-    # Port-channel switchport via sub-resource
-    if if_type == "Port-channel" and switchport:
-        # Zorg dat Port-channel bestaat
-        restconf_request("PUT", base_url, auth,
+    # Port-channel aanmaken als het nog niet bestaat
+    if if_type == "Port-channel":
+        url = (f"https://{device['host']}/restconf/data/"
+               f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}")
+        restconf_request("PUT", url, auth,
                          {f"Cisco-IOS-XE-native:{if_type}": [{"name": if_name}]})
 
 
@@ -333,21 +308,20 @@ def push_ospf(device, auth):
         return
     ospf = device["ospf"]
 
-    # Fix: PATCH via router container ipv PUT naar specifieke ospf entry
-    # Vermijdt "unknown element: ospf in ospf" probleem
     url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/router"
 
     process = {
         "id": ospf["process_id"],
         "network": [
-            {"ip": n["network"], "mask": n["wildcard"], "area": n["area"]}
+            {"ip": n["network"], "mask": n["wildcard"], "area": str(n["area"])}
             for n in ospf["networks"]
         ]
     }
     if "router_id" in ospf:
         process["router-id"] = ospf["router_id"]
-    if "passive_interfaces" in ospf:
-        process["passive-interface"] = ospf["passive_interfaces"]
+
+    # passive-interface weggelaten — veroorzaakte "unknown element: ospf" fout
+    # Passive interfaces worden geconfigureerd via interface-level passive-interface flag
 
     payload = {
         "Cisco-IOS-XE-native:router": {
@@ -509,8 +483,7 @@ def push_nat(device, auth):
         "id": inside["acl"],
         "pool": {"name": inside["pool"]}
     }
-    if inside.get("overload"):
-        entry["overload"] = {}
+    # overload weggelaten — niet geldig als child element in deze YANG versie
     payload_inside = {"Cisco-IOS-XE-nat:list": [entry]}
     restconf_request("PUT", url_inside, auth, payload_inside)
 
