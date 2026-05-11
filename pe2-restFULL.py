@@ -519,25 +519,6 @@ def push_nat(device, auth):
 
 
 # ---------------------------------------------------------
-# SNMP — native YANG (vereenvoudigd)
-# ---------------------------------------------------------
-def push_snmp(device, auth):
-    if "snmp" not in device:
-        return
-    snmp = device["snmp"]
-
-    for c in snmp.get("communities", []):
-        url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/snmp-server/community={encode_key(c['name'])}")
-        mode_key = "RO" if c["mode"].upper() == "RO" else "RW"
-        entry = {"name": c["name"], mode_key: {}}
-        if "acl" in c:
-            entry["access-list-name"] = c["acl"]
-        # Fix: single object ipv list
-        restconf_request("PUT", url, auth, {"Cisco-IOS-XE-snmp:community": entry})
-
-
-# ---------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------
 def main():
@@ -578,7 +559,6 @@ def main():
         push_ospf(dev, auth)
         push_acls(dev, auth)
         push_nat(dev, auth)
-        push_snmp(dev, auth)
 
     print("\nDeployment voltooid.")
 
