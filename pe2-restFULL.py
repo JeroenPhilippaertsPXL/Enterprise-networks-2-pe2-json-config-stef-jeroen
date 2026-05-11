@@ -3,6 +3,7 @@ import json
 import os
 import requests
 import urllib3
+from urllib.parse import quote
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -59,6 +60,24 @@ def resolve_host(dev):
     return None
 
 
+def encode_key(key):
+    """URL-encode een RESTCONF key waarde (bv. interface naam met slashes)."""
+    return quote(str(key), safe="")
+
+
+def expand_if_name(short_name):
+    """
+    Zet korte interface naam om naar volledige IOS-XE naam.
+    Gig1/0/1 -> GigabitEthernet1/0/1
+    Gig0/0/0.10 -> GigabitEthernet0/0/0.10
+    Vlan10 -> Vlan10
+    Port-channel1 -> Port-channel1
+    """
+    if short_name.startswith("Gig"):
+        return "GigabitEthernet" + short_name[3:]
+    return short_name
+
+
 def parse_if_type_name(name):
     """Zet interface naam om naar IOS-XE native type en naam."""
     if name.startswith("Gig"):
@@ -83,98 +102,107 @@ def restconf_request(method, url, auth, payload=None):
         print(f"  ERROR [{method}] {url} -> {err}")
         return None
     if r.status_code not in (200, 201, 204):
-        print(f"  FAIL  [{method}] {url} -> HTTP {r.status_code}: {r.text[:200]}")
+        print(f"  FAIL  [{method}] {url} -> HTTP {r.status_code}: {r.text[:300]}")
     else:
         print(f"  OK    [{method}] {url} -> {r.status_code}")
     return r
 
 
 # ---------------------------------------------------------
-# GLOBAL / NATIVE CONFIG
+# GLOBAL / NATIVE CONFIG — opgesplitst in kleine requests
 # ---------------------------------------------------------
-def push_global_native(device, auth):
-    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native"
-    native = {}
-
-    if "hostname" in device:
-        native["hostname"] = device["hostname"]
-    if "enable_secret" in device:
-        native["enable-secret"] = device["enable_secret"]
-    if device.get("service_password_encryption"):
-        native["service"] = {"password-encryption": {}}
-    if "banner_motd" in device:
-        native["banner"] = {"motd": {"banner": device["banner_motd"]}}
-
-    if "console" in device:
-        native.setdefault("line", {})
-        native["line"]["console"] = {
-            "console": [{
-                "first": 0,
-                "password": {"password": device["console"]["password"]},
-                "login": {}
-            }]
-        }
-
-    if "vty" in device:
-        v = device["vty"]
-        first, last = str(v["lines"]).split()
-        vty_entry = {"first": int(first), "last": int(last)}
-        if "password" in v:
-            vty_entry["password"] = {"password": v["password"]}
-        if v.get("login_local"):
-            vty_entry["login"] = {"local": {}}
-        if "transport_input" in v:
-            vty_entry["transport"] = {"input": v["transport_input"]}
-        if "access_class" in v:
-            vty_entry["access-class"] = {"in": v["access_class"]}
-        native.setdefault("line", {})
-        native["line"]["vty"] = {"vty": [vty_entry]}
-
-    if "ssh" in device:
-        ssh = device["ssh"]
-        native.setdefault("username", [])
-        native["username"].append({
-            "name": ssh["username"],
-            "secret": {"secret": ssh["secret"]}
-        })
-        native.setdefault("ip", {})
-        native["ip"].setdefault("domain", {})
-        native["ip"]["domain"]["name"] = ssh["domain_name"]
-        native["ip"].setdefault("ssh", {})
-        native["ip"]["ssh"]["version"] = ssh["version"]
-
-    if "ip_default_gateway" in device:
-        native.setdefault("ip", {})
-        native["ip"]["default-gateway"] = device["ip_default_gateway"]
-
-    if not native:
+def push_hostname(device, auth):
+    """Hostname afzonderlijk pushen."""
+    if "hostname" not in device:
         return
-    restconf_request("PATCH", url, auth, {"Cisco-IOS-XE-native:native": native})
+    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/hostname"
+    restconf_request("PUT", url, auth, {"Cisco-IOS-XE-native:hostname": device["hostname"]})
+
+
+def push_banner(device, auth):
+    """Banner MOTD afzonderlijk pushen."""
+    if "banner_motd" not in device:
+        return
+    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/banner/motd"
+    restconf_request("PUT", url, auth, {"Cisco-IOS-XE-native:motd": {"banner": device["banner_motd"]}})
+
+
+def push_username(device, auth):
+    """
+    Admin gebruiker pushen met privilege 15.
+    Dit is nodig zodat RESTCONF-calls voor OSPF/ACL/NAT niet met 403 falen.
+    """
+    ssh = device.get("ssh")
+    if not ssh:
+        return
+    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/username={encode_key(ssh['username'])}"
+    payload = {
+        "Cisco-IOS-XE-native:username": [{
+            "name": ssh["username"],
+            "privilege": 15,
+            "secret": {"secret": ssh["secret"]}
+        }]
+    }
+    restconf_request("PUT", url, auth, payload)
+
+
+def push_ip_domain(device, auth):
+    """IP domain name pushen."""
+    ssh = device.get("ssh")
+    if not ssh or "domain_name" not in ssh:
+        return
+    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/ip/domain"
+    restconf_request("PATCH", url, auth, {"Cisco-IOS-XE-native:domain": {"name": ssh["domain_name"]}})
+
+
+def push_default_gateway(device, auth):
+    """Default gateway pushen (switches)."""
+    if "ip_default_gateway" not in device:
+        return
+    url = f"https://{device['host']}/restconf/data/Cisco-IOS-XE-native:native/ip/default-gateway"
+    restconf_request("PUT", url, auth, {"Cisco-IOS-XE-native:default-gateway": device["ip_default_gateway"]})
+
+
+def push_global_native(device, auth):
+    """Push alle globale config in aparte requests om 500 te vermijden."""
+    push_hostname(device, auth)
+    push_banner(device, auth)
+    push_username(device, auth)
+    push_ip_domain(device, auth)
+    push_default_gateway(device, auth)
 
 
 # ---------------------------------------------------------
-# VLANs (switches)
+# VLANs (switches) — native pad voor IOS-XE 17.06
 # ---------------------------------------------------------
 def push_vlans(device, auth):
     if device.get("type") != "switch" or "vlans" not in device:
         return
     for vlan in device["vlans"]:
+        # Native pad — werkt op IOS-XE 17.06 (Catalyst 9000)
         url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-vlan:vlan/configuration/vlan-list={vlan['id']}")
-        payload = {"Cisco-IOS-XE-vlan:vlan-list": {"id": vlan["id"], "name": vlan["name"]}}
+               f"Cisco-IOS-XE-native:native/vlan/vlan-list={vlan['id']}")
+        payload = {
+            "Cisco-IOS-XE-vlan:vlan-list": {
+                "id": vlan["id"],
+                "name": vlan["name"]
+            }
+        }
         restconf_request("PUT", url, auth, payload)
 
 
 # ---------------------------------------------------------
-# L3 INTERFACES / SVI / SUBINTERFACES
+# L3 INTERFACES / SVI / SUBINTERFACES — met volledige namen en URL encoding
 # ---------------------------------------------------------
 def push_interface_l3(device, name, settings, auth):
+    full_name = expand_if_name(name)
     url = (f"https://{device['host']}/restconf/data/"
-           f"ietf-interfaces:interfaces/interface={name}")
+           f"ietf-interfaces:interfaces/interface={encode_key(full_name)}")
+
     enabled = not settings.get("shutdown", False)
     payload = {
         "ietf-interfaces:interface": {
-            "name": name,
+            "name": full_name,
             "type": "iana-if-type:ethernetCsmacd",
             "enabled": enabled
         }
@@ -187,7 +215,7 @@ def push_interface_l3(device, name, settings, auth):
 
 
 # ---------------------------------------------------------
-# L2 INTERFACES (switchport, trunk, port-channel) via native
+# L2 INTERFACES (switchport, trunk, port-channel) — met URL encoding
 # ---------------------------------------------------------
 def push_interface_l2_native(device, name, settings, auth):
     if_type, if_name = parse_if_type_name(name)
@@ -195,7 +223,7 @@ def push_interface_l2_native(device, name, settings, auth):
         return
 
     url = (f"https://{device['host']}/restconf/data/"
-           f"Cisco-IOS-XE-native:native/interface/{if_type}={if_name}")
+           f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}")
 
     obj = {"name": if_name}
 
@@ -228,7 +256,7 @@ def push_interface_l2_native(device, name, settings, auth):
 
 
 # ---------------------------------------------------------
-# NAT INTERFACE RICHTING (inside / outside)
+# NAT INTERFACE RICHTING (inside / outside) — met URL encoding
 # ---------------------------------------------------------
 def push_nat_interfaces(device, auth):
     if "interfaces" not in device:
@@ -240,7 +268,7 @@ def push_nat_interfaces(device, auth):
         if not if_type:
             continue
         url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/interface/{if_type}={if_name}/ip/nat")
+               f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}/ip/nat")
         nat_payload = {}
         if settings.get("nat_outside"):
             nat_payload["outside"] = {}
@@ -250,7 +278,7 @@ def push_nat_interfaces(device, auth):
 
 
 # ---------------------------------------------------------
-# IP HELPER ADDRESS (DHCP relay)
+# IP HELPER ADDRESS (DHCP relay) — met URL encoding
 # ---------------------------------------------------------
 def push_helper_addresses(device, auth):
     if "interfaces" not in device:
@@ -262,13 +290,13 @@ def push_helper_addresses(device, auth):
         if not if_type:
             continue
         url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/interface/{if_type}={if_name}/ip/helper-address")
+               f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}/ip/helper-address")
         payload = {"Cisco-IOS-XE-native:helper-address": [{"ip": settings["ip_helper_address"]}]}
         restconf_request("PUT", url, auth, payload)
 
 
 # ---------------------------------------------------------
-# OSPF COST per interface
+# OSPF COST per interface — met URL encoding
 # ---------------------------------------------------------
 def push_ospf_costs(device, auth):
     if "interfaces" not in device:
@@ -280,7 +308,7 @@ def push_ospf_costs(device, auth):
         if not if_type:
             continue
         url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/interface/{if_type}={if_name}/ip/ospf/cost")
+               f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}/ip/ospf/cost")
         restconf_request("PATCH", url, auth, {"Cisco-IOS-XE-ospf:cost": settings["ospf_cost"]})
 
 
@@ -299,7 +327,7 @@ def push_interfaces(device, auth):
 
 
 # ---------------------------------------------------------
-# HSRP — via native YANG (IOS-XE 17.03 compatibel)
+# HSRP — native YANG met URL encoding (IOS-XE 17.03 compatibel)
 # ---------------------------------------------------------
 def push_hsrp(device, auth):
     if "interfaces" not in device:
@@ -311,10 +339,8 @@ def push_hsrp(device, auth):
         if_type, if_name = parse_if_type_name(name)
         if not if_type:
             continue
-
         url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/interface/{if_type}={if_name}")
-
+               f"Cisco-IOS-XE-native:native/interface/{if_type}={encode_key(if_name)}")
         standby_entry = {
             "group-number": s["group"],
             "ip": {"address": s["ip"]},
@@ -322,7 +348,6 @@ def push_hsrp(device, auth):
         }
         if s.get("preempt", False):
             standby_entry["preempt"] = {}
-
         payload = {
             f"Cisco-IOS-XE-native:{if_type}": [{
                 "name": if_name,
@@ -333,7 +358,7 @@ def push_hsrp(device, auth):
 
 
 # ---------------------------------------------------------
-# OSPF — via native YANG (IOS-XE 17.03 compatibel)
+# OSPF — native YANG (IOS-XE 17.03 compatibel)
 # ---------------------------------------------------------
 def push_ospf(device, auth):
     if "ospf" not in device:
@@ -356,48 +381,51 @@ def push_ospf(device, auth):
 
 
 # ---------------------------------------------------------
-# ACLs — via native YANG (IOS-XE 17.03 compatibel)
+# ACLs — native YANG (IOS-XE 17.03 compatibel)
 # ---------------------------------------------------------
+def build_ace(e, seq):
+    ace = {"sequence": seq, "action": e["action"]}
+    if "protocol" in e:
+        ace["protocol"] = e["protocol"]
+
+    for field, ip_key, wc_key, pfx_key in [
+        ("source", "source-ip", "source-wildcard", "source-prefix"),
+        ("destination", "dest-ip", "dest-wildcard", "dest-prefix"),
+    ]:
+        if field not in e:
+            continue
+        val = e[field]
+        if val == "any":
+            ace[pfx_key] = "any"
+        elif val.startswith("host "):
+            ace[pfx_key] = "host"
+            ace[ip_key] = val.replace("host ", "")
+        else:
+            parts = val.split()
+            ace[ip_key] = parts[0]
+            if len(parts) > 1:
+                ace[wc_key] = parts[1]
+
+    if "dest_port" in e:
+        ace["dst-eq"] = e["dest_port"]
+    return ace
+
+
 def push_acls(device, auth):
     if "acls" not in device:
         return
     acls = device["acls"]
 
-    def build_ace(e, seq):
-        ace = {"sequence": seq, "action": e["action"]}
-        if "protocol" in e:
-            ace["protocol"] = e["protocol"]
-        for field, src_key, wc_key, pfx_key, ip_key in [
-            ("source", "source-ip", "source-wildcard", "source-prefix", "source-ip"),
-            ("destination", "dest-ip", "dest-wildcard", "dest-prefix", "dest-ip"),
-        ]:
-            if field not in e:
-                continue
-            val = e[field]
-            if val == "any":
-                ace[pfx_key] = "any"
-            elif val.startswith("host "):
-                ace[pfx_key] = "host"
-                ace[ip_key] = val.replace("host ", "")
-            else:
-                parts = val.split()
-                ace[ip_key] = parts[0]
-                if len(parts) > 1:
-                    ace[wc_key] = parts[1]
-        if "dest_port" in e:
-            ace["dst-eq"] = e["dest_port"]
-        return ace
-
     for acl in acls.get("extended", []):
         url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/ip/access-list/extended={acl['name']}")
+               f"Cisco-IOS-XE-native:native/ip/access-list/extended={encode_key(acl['name'])}")
         ace_list = [build_ace(e, (i+1)*10) for i, e in enumerate(acl["entries"])]
         payload = {"Cisco-IOS-XE-acl:extended": [{"name": acl["name"], "access-list-seq-rule": ace_list}]}
         restconf_request("PUT", url, auth, payload)
 
     for acl in acls.get("standard", []):
         url = (f"https://{device['host']}/restconf/data/"
-               f"Cisco-IOS-XE-native:native/ip/access-list/standard={acl['name']}")
+               f"Cisco-IOS-XE-native:native/ip/access-list/standard={encode_key(acl['name'])}")
         ace_list = [build_ace(e, (i+1)*10) for i, e in enumerate(acl["entries"])]
         payload = {"Cisco-IOS-XE-acl:standard": [{"name": acl["name"], "access-list-seq-rule": ace_list}]}
         restconf_request("PUT", url, auth, payload)
@@ -412,7 +440,7 @@ def push_acls(device, auth):
 
 
 # ---------------------------------------------------------
-# NAT POOL + INSIDE SOURCE — via native YANG
+# NAT POOL + INSIDE SOURCE — native YANG
 # ---------------------------------------------------------
 def push_nat(device, auth):
     if "nat" not in device:
@@ -421,7 +449,7 @@ def push_nat(device, auth):
     pool = nat["pool"]
 
     url_pool = (f"https://{device['host']}/restconf/data/"
-                f"Cisco-IOS-XE-native:native/ip/nat/pool={pool['name']}")
+                f"Cisco-IOS-XE-native:native/ip/nat/pool={encode_key(pool['name'])}")
     payload_pool = {
         "Cisco-IOS-XE-nat:pool": [{
             "id": pool["name"],
@@ -434,7 +462,8 @@ def push_nat(device, auth):
 
     inside = nat["inside_source"]
     url_inside = (f"https://{device['host']}/restconf/data/"
-                  f"Cisco-IOS-XE-native:native/ip/nat/inside/source/list={inside['acl']}/pool/{inside['pool']}")
+                  f"Cisco-IOS-XE-native:native/ip/nat/inside/source/list={inside['acl']}"
+                  f"/pool/{encode_key(inside['pool'])}")
     payload_inside = {
         "Cisco-IOS-XE-nat:pool": [{"id": inside["pool"], "overload": inside.get("overload", False)}]
     }
@@ -442,7 +471,7 @@ def push_nat(device, auth):
 
 
 # ---------------------------------------------------------
-# SNMP — via native YANG
+# SNMP — native YANG
 # ---------------------------------------------------------
 def push_snmp(device, auth):
     if "snmp" not in device:
