@@ -4,7 +4,7 @@
     {
       "name": "SW1",
       "type": "switch",
-      "hostname": "LAB-RA09-A02-SW01",
+      "hostname": "TestLAB-RA09-A02-SW01",
       "management_ip": "172.16.9.133/28",
       "ip_default_gateway": "172.16.9.129",
       "console": { "password": "cisco" },
