@@ -18,7 +18,7 @@
       "service_password_encryption": true,
       "banner_motd": "unauthorized acces is not allowed!",
       "vlans": [
-        { "id": 10, "name": "management" },
+        { "id": 10, "name": "management-test" },
         { "id": 20, "name": "VM-Hosts" },
         { "id": 30, "name": "Appliance-Servers" },
         { "id": 40, "name": "Data-Users" },
